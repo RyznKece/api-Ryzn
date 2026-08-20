@@ -8,7 +8,6 @@ const tiktok = new TikTokClient({
 });
 
 export default async function handler(req, res) {
-  // Sementara izinkan GET dan POST untuk testing
   if (!["GET", "POST"].includes(req.method)) {
     return res.status(405).json({
       success: false,
@@ -26,14 +25,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    // =========================
-    // 1. TEST DATABASE
-    // =========================
-
+    // Buat tabel kalau belum ada
     await sql`
       CREATE TABLE IF NOT EXISTS monitored_users (
         id SERIAL PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
+        avatar TEXT,
+        profile_url TEXT,
         last_video_id TEXT,
         last_checked TIMESTAMPTZ,
         enabled BOOLEAN DEFAULT TRUE,
@@ -41,41 +39,64 @@ export default async function handler(req, res) {
       )
     `;
 
-    // =========================
-    // 2. AMBIL USER TIKTOK
-    // =========================
+    // Ambil profile TikTok
+    const result = await tiktok.getUser(username);
 
-    const userResult = await tiktok.getUser(username);
-
-    if (!userResult?.data?.userInfo) {
+    if (!result?.data?.userInfo) {
       return res.status(404).json({
         success: false,
         error: "User TikTok tidak ditemukan"
       });
     }
 
-    const user = userResult.data.userInfo.user;
+    const user = result.data.userInfo.user;
 
-    // =========================
-    // 3. AMBIL VIDEO TERBARU
-    // =========================
+    // Foto profile
+    const avatar =
+      user.avatarLarger ||
+      user.avatarMedium ||
+      user.avatarThumb ||
+      null;
 
-    const postsResult = await tiktok.getUserPosts(user.secUid, {
-      postLimit: 1
-    });
+    // Username asli dari TikTok
+    const uniqueId = user.uniqueId;
 
-    // =========================
-    // 4. DEBUG RESPONSE
-    // =========================
+    // Link profile
+    const profileUrl = `https://www.tiktok.com/@${uniqueId}`;
+
+    // Simpan user
+    const inserted = await sql`
+      INSERT INTO monitored_users (
+        username,
+        avatar,
+        profile_url,
+        enabled
+      )
+      VALUES (
+        ${uniqueId},
+        ${avatar},
+        ${profileUrl},
+        TRUE
+      )
+      ON CONFLICT (username)
+      DO UPDATE SET
+        avatar = EXCLUDED.avatar,
+        profile_url = EXCLUDED.profile_url,
+        enabled = TRUE
+      RETURNING
+        id,
+        username,
+        avatar,
+        profile_url,
+        last_video_id,
+        enabled,
+        created_at
+    `;
 
     return res.status(200).json({
       success: true,
-
-      username: user.uniqueId,
-
-      secUid: user.secUid,
-
-      postsResult: postsResult
+      message: "User berhasil ditambahkan ke monitor",
+      monitor: inserted[0]
     });
 
   } catch (error) {
@@ -83,7 +104,7 @@ export default async function handler(req, res) {
 
     return res.status(500).json({
       success: false,
-      error: "Monitor gagal",
+      error: "Gagal menambahkan user",
       message: error?.message || String(error)
     });
   }
