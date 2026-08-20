@@ -1,10 +1,13 @@
 import { neon } from "@neondatabase/serverless";
-import { TikTokClient } from "@ssut/tiktok-api";
+import {
+  TikTokClient,
+  PostItemRequestType
+} from "@ssut/tiktok-api";
 
 const sql = neon(process.env.RYZN_MONITOR_DATABASE_URL);
 
 const tiktok = new TikTokClient({
-  region: "ID"
+  region: "US"
 });
 
 export default async function handler(req, res) {
@@ -16,15 +19,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Ambil semua user yang aktif dimonitor
     const users = await sql`
       SELECT
         id,
         username,
-        avatar,
-        profile_url,
-        last_video_id,
-        last_checked
+        last_video_id
       FROM monitored_users
       WHERE enabled = TRUE
       ORDER BY id ASC
@@ -34,8 +33,9 @@ export default async function handler(req, res) {
 
     for (const monitored of users) {
       try {
-        // Ambil data TikTok user
-        const userResult = await tiktok.getUser(monitored.username);
+        const userResult = await tiktok.getUser(
+          monitored.username
+        );
 
         if (!userResult?.data?.userInfo) {
           results.push({
@@ -49,19 +49,25 @@ export default async function handler(req, res) {
 
         const user = userResult.data.userInfo.user;
 
-        // Coba ambil post terbaru
-        const postsResult = await tiktok.getUserPosts(user.secUid, {
-          postLimit: 1
-        });
+        const postsResult = await tiktok.getUserPosts(
+          user.secUid,
+          {
+            postLimit: 5,
+            requestType: PostItemRequestType.Popular
+          }
+        );
 
         results.push({
           username: monitored.username,
           success: true,
 
-          debug: {
-            secUid: user.secUid,
-            postsResult
-          }
+          previousVideoId: monitored.last_video_id,
+
+          posts: postsResult?.data || null,
+
+          totalPosts: postsResult?.totalPosts || 0,
+
+          error: postsResult?.error || null
         });
 
       } catch (error) {
