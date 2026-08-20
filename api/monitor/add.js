@@ -8,6 +8,7 @@ const tiktok = new TikTokClient({
 });
 
 export default async function handler(req, res) {
+  // Sementara izinkan GET dan POST untuk testing
   if (!["GET", "POST"].includes(req.method)) {
     return res.status(405).json({
       success: false,
@@ -25,7 +26,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    // TEST 1 — Database
+    // =========================
+    // 1. TEST DATABASE
+    // =========================
+
     await sql`
       CREATE TABLE IF NOT EXISTS monitored_users (
         id SERIAL PRIMARY KEY,
@@ -37,7 +41,10 @@ export default async function handler(req, res) {
       )
     `;
 
-    // TEST 2 — TikTok profile
+    // =========================
+    // 2. AMBIL USER TIKTOK
+    // =========================
+
     const userResult = await tiktok.getUser(username);
 
     if (!userResult?.data?.userInfo) {
@@ -49,40 +56,26 @@ export default async function handler(req, res) {
 
     const user = userResult.data.userInfo.user;
 
-    // TEST 3 — Video
+    // =========================
+    // 3. AMBIL VIDEO TERBARU
+    // =========================
+
     const postsResult = await tiktok.getUserPosts(user.secUid, {
       postLimit: 1
     });
 
-    const latestVideo = postsResult?.data?.[0];
-
-    if (!latestVideo) {
-      return res.status(400).json({
-        success: false,
-        error: "Tidak menemukan video"
-      });
-    }
-
-    // TEST 4 — Database insert
-    const inserted = await sql`
-      INSERT INTO monitored_users
-        (username, last_video_id, last_checked, enabled)
-      VALUES
-        (${user.uniqueId}, ${latestVideo.id}, NOW(), TRUE)
-      ON CONFLICT (username)
-      DO UPDATE SET
-        enabled = TRUE
-      RETURNING *
-    `;
+    // =========================
+    // 4. DEBUG RESPONSE
+    // =========================
 
     return res.status(200).json({
       success: true,
 
-      monitor: {
-        username: inserted[0].username,
-        lastVideoId: inserted[0].last_video_id,
-        enabled: inserted[0].enabled
-      }
+      username: user.uniqueId,
+
+      secUid: user.secUid,
+
+      postsResult: postsResult
     });
 
   } catch (error) {
