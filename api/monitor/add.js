@@ -8,6 +8,7 @@ const tiktok = new TikTokClient({
 });
 
 export default async function handler(req, res) {
+  // Sementara GET dan POST sama-sama diizinkan untuk testing
   if (!["GET", "POST"].includes(req.method)) {
     return res.status(405).json({
       success: false,
@@ -25,7 +26,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Buat tabel kalau belum ada
+    // ==========================================
+    // 1. Buat tabel jika belum ada
+    // ==========================================
+
     await sql`
       CREATE TABLE IF NOT EXISTS monitored_users (
         id SERIAL PRIMARY KEY,
@@ -39,7 +43,24 @@ export default async function handler(req, res) {
       )
     `;
 
-    // Ambil profile TikTok
+    // ==========================================
+    // 2. Migrasi tabel lama
+    // ==========================================
+
+    await sql`
+      ALTER TABLE monitored_users
+      ADD COLUMN IF NOT EXISTS avatar TEXT
+    `;
+
+    await sql`
+      ALTER TABLE monitored_users
+      ADD COLUMN IF NOT EXISTS profile_url TEXT
+    `;
+
+    // ==========================================
+    // 3. Ambil profile TikTok
+    // ==========================================
+
     const result = await tiktok.getUser(username);
 
     if (!result?.data?.userInfo) {
@@ -51,7 +72,10 @@ export default async function handler(req, res) {
 
     const user = result.data.userInfo.user;
 
-    // Foto profile
+    // ==========================================
+    // 4. Ambil avatar
+    // ==========================================
+
     const avatar =
       user.avatarLarger ||
       user.avatarMedium ||
@@ -61,10 +85,17 @@ export default async function handler(req, res) {
     // Username asli dari TikTok
     const uniqueId = user.uniqueId;
 
-    // Link profile
-    const profileUrl = `https://www.tiktok.com/@${uniqueId}`;
+    // ==========================================
+    // 5. Link profile TikTok
+    // ==========================================
 
-    // Simpan user
+    const profileUrl =
+      `https://www.tiktok.com/@${uniqueId}`;
+
+    // ==========================================
+    // 6. Simpan ke database
+    // ==========================================
+
     const inserted = await sql`
       INSERT INTO monitored_users (
         username,
@@ -78,24 +109,32 @@ export default async function handler(req, res) {
         ${profileUrl},
         TRUE
       )
+
       ON CONFLICT (username)
       DO UPDATE SET
         avatar = EXCLUDED.avatar,
         profile_url = EXCLUDED.profile_url,
         enabled = TRUE
+
       RETURNING
         id,
         username,
         avatar,
         profile_url,
         last_video_id,
+        last_checked,
         enabled,
         created_at
     `;
 
+    // ==========================================
+    // 7. Response
+    // ==========================================
+
     return res.status(200).json({
       success: true,
       message: "User berhasil ditambahkan ke monitor",
+
       monitor: inserted[0]
     });
 
