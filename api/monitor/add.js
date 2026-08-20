@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     });
   }
 
-  let username = req.query.username;
+  const username = req.query.username?.replace(/^@/, "").trim();
 
   if (!username) {
     return res.status(400).json({
@@ -24,10 +24,8 @@ export default async function handler(req, res) {
     });
   }
 
-  username = username.replace(/^@/, "").trim();
-
   try {
-    // Buat tabel kalau belum ada
+    // TEST 1 — Database
     await sql`
       CREATE TABLE IF NOT EXISTS monitored_users (
         id SERIAL PRIMARY KEY,
@@ -39,33 +37,33 @@ export default async function handler(req, res) {
       )
     `;
 
-    // Cek username TikTok
-    const result = await tiktok.getUser(username);
+    // TEST 2 — TikTok profile
+    const userResult = await tiktok.getUser(username);
 
-    if (!result?.data?.userInfo) {
+    if (!userResult?.data?.userInfo) {
       return res.status(404).json({
         success: false,
         error: "User TikTok tidak ditemukan"
       });
     }
 
-    const user = result.data.userInfo.user;
+    const user = userResult.data.userInfo.user;
 
-    // Ambil video terbaru sebagai baseline
-    const posts = await tiktok.getUserPosts(user.secUid, {
+    // TEST 3 — Video
+    const postsResult = await tiktok.getUserPosts(user.secUid, {
       postLimit: 1
     });
 
-    const latestVideo = posts?.data?.[0];
+    const latestVideo = postsResult?.data?.[0];
 
     if (!latestVideo) {
       return res.status(400).json({
         success: false,
-        error: "User tidak memiliki video yang bisa ditemukan"
+        error: "Tidak menemukan video"
       });
     }
 
-    // Masukkan / update user
+    // TEST 4 — Database insert
     const inserted = await sql`
       INSERT INTO monitored_users
         (username, last_video_id, last_checked, enabled)
@@ -79,7 +77,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "TikTok berhasil ditambahkan ke monitor",
 
       monitor: {
         username: inserted[0].username,
@@ -93,7 +90,7 @@ export default async function handler(req, res) {
 
     return res.status(500).json({
       success: false,
-      error: "Gagal menambahkan monitor",
+      error: "Monitor gagal",
       message: error?.message || String(error)
     });
   }
