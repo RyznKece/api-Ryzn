@@ -1,114 +1,48 @@
-import { neon } from "@neondatabase/serverless";
-import {
-  getUser,
-  getUserPosts
-} from "@rediska1114/tiktok-api";
-
-const sql = neon(process.env.RYZN_MONITOR_DATABASE_URL);
+import { getUser } from "@rediska1114/tiktok-api";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({
-      success: false,
-      error: "Method Not Allowed"
-    });
-  }
+  const username =
+    req.query.username?.replace(/^@/, "").trim() ||
+    "ryznapalah";
 
   try {
-    // Ambil user monitor
-    const users = await sql`
-      SELECT
-        id,
-        username,
-        last_video_id
-      FROM monitored_users
-      WHERE enabled = TRUE
-      ORDER BY id ASC
-      LIMIT 1
-    `;
-
-    if (!users.length) {
-      return res.status(404).json({
-        success: false,
-        error: "Belum ada user yang dimonitor"
-      });
-    }
-
-    const monitored = users[0];
-
-    // ==========================================
-    // 1. Ambil profile + msToken otomatis
-    // ==========================================
-
-    const userResult = await getUser(
-      monitored.username,
+    const result = await getUser(
+      username,
       undefined,
       "US"
     );
 
-    if (userResult?.error) {
-      return res.status(502).json({
-        success: false,
-        step: "getUser",
-        error: userResult.error,
-        statusCode: userResult.statusCode || null
-      });
-    }
-
-    if (!userResult?.data?.userInfo) {
-      return res.status(404).json({
-        success: false,
-        step: "getUser",
-        error: "User TikTok tidak ditemukan"
-      });
-    }
-
-    const user = userResult.data.userInfo.user;
-
-    // ==========================================
-    // 2. Ambil video terbaru
-    // ==========================================
-
-    const postsResult = await getUserPosts(
-      user.secUid,
-      undefined,
-      5,
-      "US",
-      userResult.msToken
-    );
-
-    // ==========================================
-    // 3. Jangan pernah return msToken
-    // ==========================================
-
     return res.status(200).json({
       success: true,
 
-      username: monitored.username,
+      username,
 
-      user: {
-        id: user.id,
-        uniqueId: user.uniqueId,
-        nickname: user.nickname,
-        secUid: user.secUid
-      },
+      hasData: !!result?.data,
 
-      posts: postsResult?.data || null,
+      hasUserInfo: !!result?.data?.userInfo,
 
-      totalPosts: postsResult?.totalPosts || 0,
+      hasMsToken: !!result?.msToken,
 
-      error: postsResult?.error || null,
+      error: result?.error || null,
 
-      statusCode: postsResult?.statusCode || null
+      statusCode: result?.statusCode || null,
+
+      user: result?.data?.userInfo?.user
+        ? {
+            id: result.data.userInfo.user.id,
+            uniqueId: result.data.userInfo.user.uniqueId,
+            nickname: result.data.userInfo.user.nickname,
+            secUid: result.data.userInfo.user.secUid
+          }
+        : null
     });
 
   } catch (error) {
-    console.error("Monitor Check Error:", error);
+    console.error(error);
 
     return res.status(500).json({
       success: false,
-      error: "Monitor check gagal",
-      message: error?.message || String(error)
+      error: error?.message || String(error)
     });
   }
 }
