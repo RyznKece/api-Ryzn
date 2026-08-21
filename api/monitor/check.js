@@ -9,23 +9,23 @@ export default async function handler(req, res) {
     const result = await getUser(
       username,
       undefined,
-      "US"
+      "ID"
     );
 
     return res.status(200).json({
       success: true,
-
       username,
 
       hasData: !!result?.data,
-
       hasUserInfo: !!result?.data?.userInfo,
-
       hasMsToken: !!result?.msToken,
 
       error: result?.error || null,
-
       statusCode: result?.statusCode || null,
+
+      rawKeys: result
+        ? Object.keys(result)
+        : [],
 
       user: result?.data?.userInfo?.user
         ? {
@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("TikTok test error:", error);
 
     return res.status(500).json({
       success: false,
