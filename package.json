@@ -6,6 +6,7 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
     "@ssut/tiktok-api": "^1.5.2",
-    "tiktok-app-api": "^1.4.1"
+    "tiktok-app-api": "^1.4.1",
+    "@rediska1114/tiktok-api": "^1.0.7"
   }
 }
