@@ -1,14 +1,7 @@
 import { neon } from "@neondatabase/serverless";
-import {
-  TikTokClient,
-  PostItemRequestType
-} from "@ssut/tiktok-api";
+import tiktok from "tiktok-app-api";
 
 const sql = neon(process.env.RYZN_MONITOR_DATABASE_URL);
-
-const tiktok = new TikTokClient({
-  region: "US"
-});
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -19,6 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Ambil user monitor pertama dulu
     const users = await sql`
       SELECT
         id,
@@ -27,71 +21,66 @@ export default async function handler(req, res) {
       FROM monitored_users
       WHERE enabled = TRUE
       ORDER BY id ASC
+      LIMIT 1
     `;
 
-    const results = [];
-
-    for (const monitored of users) {
-      try {
-        const userResult = await tiktok.getUser(
-          monitored.username
-        );
-
-        if (!userResult?.data?.userInfo) {
-          results.push({
-            username: monitored.username,
-            success: false,
-            error: "User TikTok tidak ditemukan"
-          });
-
-          continue;
-        }
-
-        const user = userResult.data.userInfo.user;
-
-        const postsResult = await tiktok.getUserPosts(
-          user.secUid,
-          {
-            postLimit: 5,
-            requestType: PostItemRequestType.Popular
-          }
-        );
-
-        results.push({
-          username: monitored.username,
-          success: true,
-
-          previousVideoId: monitored.last_video_id,
-
-          posts: postsResult?.data || null,
-
-          totalPosts: postsResult?.totalPosts || 0,
-
-          error: postsResult?.error || null
-        });
-
-      } catch (error) {
-        results.push({
-          username: monitored.username,
-          success: false,
-          error: error?.message || String(error)
-        });
-      }
+    if (!users.length) {
+      return res.status(404).json({
+        success: false,
+        error: "Belum ada user yang dimonitor"
+      });
     }
+
+    const monitored = users[0];
+
+    // ==========================================
+    // INIT TIKTOK APP API
+    // ==========================================
+
+    const tiktokApp = await tiktok();
+
+    // ==========================================
+    // AMBIL USER
+    // ==========================================
+
+    const user = await tiktokApp.getUserByName(
+      monitored.username
+    );
+
+    // ==========================================
+    // AMBIL UPLOAD VIDEO
+    // ==========================================
+
+    const iterator = tiktokApp.getUploadedVideos(user);
+
+    const videosResult = await iterator.next();
+
+    const videos = videosResult.value || [];
+
+    // ==========================================
+    // RESPONSE RAW
+    // ==========================================
 
     return res.status(200).json({
       success: true,
-      count: users.length,
-      results
+
+      username: monitored.username,
+
+      videoCount: videos.length,
+
+      videos: videos
     });
 
   } catch (error) {
-    console.error("Monitor Check Error:", error);
+    console.error("TikTok App API Error:", error);
 
     return res.status(500).json({
       success: false,
-      error: "Gagal menjalankan monitor",
-      message: error?.message || String(error)
+      error: "TikTok App API gagal",
+      message: error?.message || String(error),
+      stack: process.env.NODE_ENV === "development"
+        ? error?.stack
+        : undefined
     });
   }
 }
