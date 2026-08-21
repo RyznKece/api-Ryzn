@@ -1,5 +1,8 @@
 import { neon } from "@neondatabase/serverless";
-import tiktok from "tiktok-app-api";
+import {
+  getUser,
+  getUserPosts
+} from "@rediska1114/tiktok-api";
 
 const sql = neon(process.env.RYZN_MONITOR_DATABASE_URL);
 
@@ -12,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Ambil user monitor pertama dulu
+    // Ambil user monitor
     const users = await sql`
       SELECT
         id,
@@ -34,31 +37,48 @@ export default async function handler(req, res) {
     const monitored = users[0];
 
     // ==========================================
-    // INIT TIKTOK APP API
+    // 1. Ambil profile + msToken otomatis
     // ==========================================
 
-    const tiktokApp = await tiktok();
+    const userResult = await getUser(
+      monitored.username,
+      undefined,
+      "US"
+    );
+
+    if (userResult?.error) {
+      return res.status(502).json({
+        success: false,
+        step: "getUser",
+        error: userResult.error,
+        statusCode: userResult.statusCode || null
+      });
+    }
+
+    if (!userResult?.data?.userInfo) {
+      return res.status(404).json({
+        success: false,
+        step: "getUser",
+        error: "User TikTok tidak ditemukan"
+      });
+    }
+
+    const user = userResult.data.userInfo.user;
 
     // ==========================================
-    // AMBIL USER
+    // 2. Ambil video terbaru
     // ==========================================
 
-    const user = await tiktokApp.getUserByName(
-      monitored.username
+    const postsResult = await getUserPosts(
+      user.secUid,
+      undefined,
+      5,
+      "US",
+      userResult.msToken
     );
 
     // ==========================================
-    // AMBIL UPLOAD VIDEO
-    // ==========================================
-
-    const iterator = tiktokApp.getUploadedVideos(user);
-
-    const videosResult = await iterator.next();
-
-    const videos = videosResult.value || [];
-
-    // ==========================================
-    // RESPONSE RAW
+    // 3. Jangan pernah return msToken
     // ==========================================
 
     return res.status(200).json({
@@ -66,21 +86,29 @@ export default async function handler(req, res) {
 
       username: monitored.username,
 
-      videoCount: videos.length,
+      user: {
+        id: user.id,
+        uniqueId: user.uniqueId,
+        nickname: user.nickname,
+        secUid: user.secUid
+      },
 
-      videos: videos
+      posts: postsResult?.data || null,
+
+      totalPosts: postsResult?.totalPosts || 0,
+
+      error: postsResult?.error || null,
+
+      statusCode: postsResult?.statusCode || null
     });
 
   } catch (error) {
-    console.error("TikTok App API Error:", error);
+    console.error("Monitor Check Error:", error);
 
     return res.status(500).json({
       success: false,
-      error: "TikTok App API gagal",
-      message: error?.message || String(error),
-      stack: process.env.NODE_ENV === "development"
-        ? error?.stack
-        : undefined
+      error: "Monitor check gagal",
+      message: error?.message || String(error)
     });
   }
 }
