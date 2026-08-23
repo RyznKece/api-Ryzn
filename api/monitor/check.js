@@ -95,7 +95,7 @@ export default async function handler(req, res) {
 
           newVideo: false,
 
-          videoStatus: "https://alight-creative.firebaseapp.com/__/auth/links?link=https://alightcreative.com/auth_action/?apiKey%3DAIzaSyDrZ9jr_Y16ltSBqsQR5IH6I04FRga6Ki0%26mode%3DsignIn%26oobCode%3DszeQjQRKpfAZPCwdJqmU8bpbYoGl5abpO3jRKwubq98AAAGgL0o_OQ%26continueUrl%3Dhttps://alightcreative.com?ui_sid%253D6873790586%2526ui_sd%253D0%26lang%3Did"
+          videoStatus: SCRAPER_NOT_CONNECTED"
         });
 
       } catch (error) {
