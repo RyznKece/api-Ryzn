@@ -5,7 +5,8 @@ const sql = neon(process.env.RYZN_MONITOR_DATABASE_URL);
 
 const client = new TikTokClient({
   region: "ID",
-  msToken: process.env.TIKTOK_MS_TOKEN
+  msToken: process.env.TIKTOK_MS_TOKEN,
+  tiktokApiHost: "api16-normal-c-useast1a.tiktokv.com"
 });
 
 export default async function handler(req, res) {
