@@ -19,7 +19,11 @@ export default async function handler(req, res) {
 
   try {
     const users = await sql`
-      SELECT id, username, last_video_id
+      SELECT
+        id,
+        username,
+        last_video_id,
+        enabled
       FROM monitored_users
       WHERE enabled = TRUE
       ORDER BY id ASC
@@ -29,9 +33,9 @@ export default async function handler(req, res) {
 
     for (const monitored of users) {
       try {
-        // =========================
+        // =====================================
         // PROFILE
-        // =========================
+        // =====================================
 
         const userResult =
           await client.getUser(monitored.username);
@@ -40,7 +44,7 @@ export default async function handler(req, res) {
           results.push({
             username: monitored.username,
             success: false,
-            error: userResult?.error || "User tidak ditemukan"
+            error: "User tidak ditemukan"
           });
 
           continue;
@@ -49,133 +53,25 @@ export default async function handler(req, res) {
         const { user, stats } =
           userResult.data.userInfo;
 
-        // Token hasil dari request getUser.
-        // Jangan pernah dimasukkan ke response.
-        const msToken =
-          userResult.msToken ||
-          process.env.TIKTOK_MS_TOKEN;
+        // =====================================
+        // VIDEO
+        // =====================================
 
-        // =========================
-        // POSTS
-        // =========================
+        /*
+         * SEMENTARA:
+         * Jangan pakai getUserPosts() karena
+         * endpoint tersebut menghasilkan
+         * EMPTY_RESPONSE.
+         *
+         * Nanti bagian ini akan diganti dengan
+         * video scraper kita.
+         */
 
-        const postsResult =
-          await client.getUserPosts(
-            user.secUid,
-            {
-              postLimit: 10
-            }
-          );
+        const latestVideo = null;
 
-        // =========================
-        // DEBUG POST
-        // =========================
-
-        if (
-          !postsResult ||
-          postsResult.error ||
-          !postsResult.data ||
-          postsResult.data.length === 0
-        ) {
-          results.push({
-            username: user.uniqueId,
-
-            success: true,
-
-            profile: {
-              id: user.id,
-              nickname: user.nickname,
-              avatar: user.avatarLarger,
-              followers: stats.followerCount,
-              following: stats.followingCount,
-              totalLikes: stats.heartCount,
-              videoCount: stats.videoCount
-            },
-
-            previousVideoId:
-              monitored.last_video_id,
-
-            posts: null,
-
-            totalPosts:
-              postsResult?.totalPosts || 0,
-
-            postsError:
-              postsResult?.error || "EMPTY_RESPONSE",
-
-            msTokenReceived:
-              !!msToken
-          });
-
-          continue;
-        }
-
-        // =========================
-        // SORT TERBARU
-        // =========================
-
-        const posts = [...postsResult.data];
-
-        posts.sort(
-          (a, b) =>
-            Number(b.createTime || 0) -
-            Number(a.createTime || 0)
-        );
-
-        const latest = posts[0];
-
-        // =========================
-        // LATEST VIDEO
-        // =========================
-
-        const latestVideo = {
-          id: latest.id,
-
-          url:
-            `https://www.tiktok.com/@${user.uniqueId}/video/${latest.id}`,
-
-          description:
-            latest.desc || "",
-
-          createdAt:
-            latest.createTime || null,
-
-          views:
-            latest.stats?.playCount || 0,
-
-          likes:
-            latest.stats?.diggCount || 0,
-
-          comments:
-            latest.stats?.commentCount || 0,
-
-          shares:
-            latest.stats?.shareCount || 0
-        };
-
-        // =========================
-        // VIDEO BARU?
-        // =========================
-
-        const newVideo =
-          monitored.last_video_id !== null &&
-          monitored.last_video_id !== latest.id;
-
-        // =========================
-        // UPDATE DATABASE
-        // =========================
-
-        await sql`
-          UPDATE monitored_users
-          SET
-            last_video_id = ${latest.id},
-            last_checked = NOW()
-          WHERE id = ${monitored.id}
-        `;
-
-        // =========================
-        // RESULT
-        // =========================
+        // =====================================
+        // RESPONSE
+        // =====================================
 
         results.push({
           username: user.uniqueId,
@@ -197,16 +93,9 @@ export default async function handler(req, res) {
 
           latestVideo,
 
-          newVideo,
+          newVideo: false,
 
-          totalPosts:
-            postsResult.totalPosts || posts.length,
-
-          postsChecked:
-            posts.length,
-
-          postsError:
-            postsResult.error || null
+          videoStatus: "SCRAPER_NOT_CONNECTED"
         });
 
       } catch (error) {
@@ -233,7 +122,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error(
-      "Monitor error:",
+      "Monitor check error:",
       error
     );
 
