@@ -17,49 +17,25 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ==========================================
-    // AMBIL SEMUA USER YANG DIMONITOR
-    // ==========================================
-
     const users = await sql`
-      SELECT
-        id,
-        username,
-        last_video_id
+      SELECT id, username, last_video_id
       FROM monitored_users
       WHERE enabled = TRUE
       ORDER BY id ASC
     `;
 
-    if (!users.length) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        results: []
-      });
-    }
-
     const results = [];
-
-    // ==========================================
-    // CEK USER SATU PER SATU
-    // ==========================================
 
     for (const monitored of users) {
       try {
-        // ======================================
-        // 1. PROFILE
-        // ======================================
+        // =========================
+        // PROFILE
+        // =========================
 
-        const userResult = await client.getUser(
-          monitored.username
-        );
+        const userResult =
+          await client.getUser(monitored.username);
 
-        if (
-          !userResult ||
-          !userResult.data ||
-          !userResult.data.userInfo
-        ) {
+        if (!userResult?.data?.userInfo) {
           results.push({
             username: monitored.username,
             success: false,
@@ -72,9 +48,15 @@ export default async function handler(req, res) {
         const { user, stats } =
           userResult.data.userInfo;
 
-        // ======================================
-        // 2. AMBIL POST USER
-        // ======================================
+        // Token hasil dari request getUser.
+        // Jangan pernah dimasukkan ke response.
+        const msToken =
+          userResult.msToken ||
+          process.env.TIKTOK_MS_TOKEN;
+
+        // =========================
+        // POSTS
+        // =========================
 
         const postsResult =
           await client.getUserPosts(
@@ -84,9 +66,9 @@ export default async function handler(req, res) {
             }
           );
 
-        // ======================================
-        // JIKA GAGAL AMBIL POST
-        // ======================================
+        // =========================
+        // DEBUG POST
+        // =========================
 
         if (
           !postsResult ||
@@ -105,27 +87,31 @@ export default async function handler(req, res) {
               avatar: user.avatarLarger,
               followers: stats.followerCount,
               following: stats.followingCount,
-              totalLikes: stats.heartCount
+              totalLikes: stats.heartCount,
+              videoCount: stats.videoCount
             },
 
             previousVideoId:
               monitored.last_video_id,
 
-            latestVideo: null,
+            posts: null,
 
             totalPosts:
               postsResult?.totalPosts || 0,
 
             postsError:
-              postsResult?.error || "Tidak ada post"
+              postsResult?.error || "EMPTY_RESPONSE",
+
+            msTokenReceived:
+              !!msToken
           });
 
           continue;
         }
 
-        // ======================================
-        // 3. URUTKAN POST TERBARU
-        // ======================================
+        // =========================
+        // SORT TERBARU
+        // =========================
 
         const posts = [...postsResult.data];
 
@@ -137,9 +123,9 @@ export default async function handler(req, res) {
 
         const latest = posts[0];
 
-        // ======================================
-        // 4. DATA VIDEO TERBARU
-        // ======================================
+        // =========================
+        // LATEST VIDEO
+        // =========================
 
         const latestVideo = {
           id: latest.id,
@@ -163,27 +149,20 @@ export default async function handler(req, res) {
             latest.stats?.commentCount || 0,
 
           shares:
-            latest.stats?.shareCount || 0,
-
-          type:
-            latest.video
-              ? "video"
-              : latest.imagePost
-                ? "image"
-                : "unknown"
+            latest.stats?.shareCount || 0
         };
 
-        // ======================================
-        // 5. CEK VIDEO BARU
-        // ======================================
+        // =========================
+        // VIDEO BARU?
+        // =========================
 
-        const isNewVideo =
+        const newVideo =
           monitored.last_video_id !== null &&
           monitored.last_video_id !== latest.id;
 
-        // ======================================
-        // 6. UPDATE DATABASE
-        // ======================================
+        // =========================
+        // UPDATE DATABASE
+        // =========================
 
         await sql`
           UPDATE monitored_users
@@ -193,9 +172,9 @@ export default async function handler(req, res) {
           WHERE id = ${monitored.id}
         `;
 
-        // ======================================
-        // 7. RESPONSE
-        // ======================================
+        // =========================
+        // RESULT
+        // =========================
 
         results.push({
           username: user.uniqueId,
@@ -208,7 +187,8 @@ export default async function handler(req, res) {
             avatar: user.avatarLarger,
             followers: stats.followerCount,
             following: stats.followingCount,
-            totalLikes: stats.heartCount
+            totalLikes: stats.heartCount,
+            videoCount: stats.videoCount
           },
 
           previousVideoId:
@@ -216,7 +196,7 @@ export default async function handler(req, res) {
 
           latestVideo,
 
-          newVideo: isNewVideo,
+          newVideo,
 
           totalPosts:
             postsResult.totalPosts || posts.length,
@@ -230,25 +210,19 @@ export default async function handler(req, res) {
 
       } catch (error) {
         console.error(
-          `Monitor error for @${monitored.username}:`,
+          `Monitor error @${monitored.username}:`,
           error
         );
 
         results.push({
           username: monitored.username,
-
           success: false,
-
           error:
             error?.message ||
             String(error)
         });
       }
     }
-
-    // ==========================================
-    // RESPONSE AKHIR
-    // ==========================================
 
     return res.status(200).json({
       success: true,
@@ -258,7 +232,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error(
-      "Monitor Check Error:",
+      "Monitor error:",
       error
     );
 
